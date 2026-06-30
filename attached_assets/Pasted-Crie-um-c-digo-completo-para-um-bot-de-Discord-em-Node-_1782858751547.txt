@@ -1,0 +1,25 @@
+Crie um código completo para um bot de Discord em Node.js (usando discord.js v14) e Express. O bot já está adicionado ao servidor "Frost Life", possui todas as permissões necessárias e foi configurado com todas as Intents na aba Bot do Discord Developer Portal. O script deve conter os dois sistemas a seguir, configurados de forma blindada, robusta e visualmente limpa: 
+
+1.  **SISTEMA 1 - Comando /visu (Perfil do Discord Detalhado):**
+    *   **Nome do Comando:** O comando deve se chamar apenas `/visu`.
+    *   **Restrição de Canal Absoluta:** Este comando deve operar exclusivamente no canal ID `1521626552335601724`. Se for usado em qualquer outro canal do servidor, o bot deve responder de forma privada (usando ephemeral: true) para a pessoa: "Eita! Você não pode usar esse comando aqui! Tente em <#1521626552335601724>".
+    *   **Regra Visual de Limpeza:** Para garantir que NÃO apareça aquela mensagem do topo dizendo "tal usuário usou /visu", a resposta deve ser enviada diretamente de forma pública sem a utilização de mensagens de carregamento ocultas que deixam rastros no cabeçalho do Discord.
+    *   **Estrutura da Embed (#00f0ff):** Quando o comando for aceito no canal correto, o bot deve enviar uma Embed com as seguintes especificações:
+        *   **Cor:** Azul-celeste brilhante (`#00f0ff`).
+        *   **Título:** "Perfil do Usuário - \[Nome de Exibição / GlobalName da Pessoa\]".
+        *   **Descrição Detalhada:** Deve exibir textualmente as seguintes informações coletadas do servidor:
+            *   **Mensagens Enviadas:** Mostrar o total exato de mensagens que aquela pessoa já enviou no servidor Frost Life. Crie um sistema de persistência ou contagem em memória coletada através do evento `messageCreate` que monitora as mensagens, armazena o ID do usuário e soma +1 a cada nova linha enviada por ele no chat geral ou em outros canais.
+            *   **Cargos:** Listar o nome de todos os cargos que o membro possui no servidor atual, formatados de forma organizada (separados por vírgulas), ignorando o cargo padrão @everyone.
+        *   **Imagem Principal:** A Embed deve exibir a foto de avatar da própria pessoa no Discord em tamanho grande centralizada, utilizando o método `.setImage(interaction.user.displayAvatarURL({ size: 1024, dynamic: true }))`.
+        *   **Rodapé Fixo Extenso:** Embaixo da foto da pessoa, o rodapé (footer) da Embed deve exibir exatamente o texto: "Use /visu para ver seu perfil".
+    *   **Tratamento de Erros Trancado:** Qualquer falha na leitura dos dados de contagem ou do Discord deve responder em modo oculto `{ ephemeral: true }` para manter o chat do mostruário impecável. 
+2.  **SISTEMA 2 - FAQ Inteligente com IA (Chat Geral):**
+    *   **Canal de Atuação:** No canal ID `1499875670128590969` (Chat Geral), o bot deve interagir de forma inteligente sempre que for mencionado ou receber mensagens diretas. Ele deve ignorar outros robôs para evitar loops.
+    *   **Efeito de Digitação:** O bot deve ativar o efeito visual de digitação (`message.channel.sendTyping()`) enquanto processa a resposta.
+    *   **Conexão Nativa e Segura:** Use o método nativo `fetch` via requisição HTTP POST direto para a URL oficial da API do Gemini 1.5 Flash do Google utilizando a chave de ambiente protegida `process.env.GEMINI_KEY`.
+    *   **Mapeamento Blindado de Sub-listas:** A resposta do JSON recebida do Google deve ser desmembrada obrigatoriamente utilizando os seletores e índices de array corretos: `dataIA.candidates[0].content.parts[0].text`. Isso impede de forma definitiva erros de leitura de dados nulos ("Cannot read properties of undefined") que faziam o bot travar.
+    *   **Prompt de Contexto e Personalidade Fixa:** O contexto injetado na IA deve ser: "Você é a IA de suporte e ajuda do servidor do Discord chamado 'Frost Life'. Sua personalidade é prestativa, fria e moderna (use emojis de gelo e neve ❄️🧊). Você deve responder à dúvida do usuário de forma direta e inteligente, explicando tudo detalhadamente. Lembre-se: Você serve exclusivamente para dar suporte e tirar dúvidas do servidor, não puxe assuntos aleatórios fora do escopo da comunidade." 
+3.  **Arquitetura de Atividade 24/7 (Express):**
+    *   Desenvolva um servidor web com Express rodando em segundo plano e escutando na porta `process.env.PORT || 3000`.
+    *   O servidor deve responder com status HTTP 200 OK na rota raiz `/` enviando a mensagem "Frost Life System Ativo! ❄️". Isso garante que plataformas de hospedagem possam realizar pings de monitoramento constantes e manter o bot online sem entrar em modo de hibernação.
+    *   Puxe todas as credenciais sensíveis e tokens de forma trancada usando `process.env.BOT_TOKEN` e `process.env.GEMINI_KEY` sem expor os códigos direto no script.
