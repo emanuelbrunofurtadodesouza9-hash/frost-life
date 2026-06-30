@@ -16,45 +16,13 @@ import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
 import { logger } from "./lib/logger";
 
 const BOT_TOKEN = process.env["BOT_TOKEN"];
-const GEMINI_KEY = process.env["GEMINI_KEY"];
+const GROQ_API_KEY = process.env["GROQ_API_KEY"];
 
 const VISU_CHANNEL_ID = "1521626552335601724";
 const FAQ_CHANNEL_ID = "1499875670128590969";
 const AVATAR_CHANNEL_ID = "1506813878976385094";
 
 const messageCounts = new Map<string, number>();
-let geminiModel = "gemini-2.0-flash"; // will be overridden at startup
-
-async function discoverGeminiModel(): Promise<string> {
-  const preferred = [
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
-  ];
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`
-    );
-    const data = (await res.json()) as {
-      models?: { name: string; supportedGenerationMethods?: string[] }[];
-    };
-    const available = (data.models ?? [])
-      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-      .map((m) => m.name.replace("models/", ""));
-
-    logger.info({ available }, "Modelos Gemini disponíveis");
-
-    for (const p of preferred) {
-      if (available.includes(p)) return p;
-    }
-    if (available.length > 0) return available[0]!;
-  } catch (err) {
-    logger.error({ err }, "Erro ao listar modelos Gemini");
-  }
-  return "gemini-2.0-flash"; // último recurso
-}
 
 const client = new Client({
   intents: [
@@ -106,8 +74,6 @@ async function registerCommands(clientId: string, guildId: string, rest: REST) {
 
 client.once(Events.ClientReady, async (readyClient) => {
   logger.info({ tag: readyClient.user.tag }, "Bot do Discord conectado");
-  geminiModel = await discoverGeminiModel();
-  logger.info({ geminiModel }, "Modelo Gemini selecionado");
   if (!BOT_TOKEN) return;
   const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
   await clearGlobalCommands(readyClient.user.id, rest);
@@ -135,49 +101,44 @@ client.on(Events.MessageCreate, async (message: Message) => {
 
     const userText = message.content.replace(/<@!?\d+>/g, "").trim();
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GEMINI_KEY}`;
-
-    const body = {
-      contents: [
-        {
-          parts: [
-            {
-              text: `Você é a IA de suporte e ajuda do servidor do Discord chamado 'Frost Life'. Sua personalidade é prestativa, fria e moderna (use emojis de gelo e neve ❄️🧊). Você deve responder à dúvida do usuário de forma direta e inteligente, explicando tudo detalhadamente. Lembre-se: Você serve exclusivamente para dar suporte e tirar dúvidas do servidor, não puxe assuntos aleatórios fora do contexto do servidor. Pergunta do usuário: ${userText}`,
-            },
-          ],
-        },
-      ],
-    };
-
-    const res = await fetch(geminiUrl, {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          {
+            role: "system",
+            content: "Você é a IA de suporte e ajuda do servidor do Discord chamado 'Frost Life'. Sua personalidade é prestativa, fria e moderna (use emojis de gelo e neve ❄️🧊). Você deve responder à dúvida do usuário de forma direta e inteligente, explicando tudo detalhadamente. Lembre-se: Você serve exclusivamente para dar suporte e tirar dúvidas do servidor, não puxe assuntos aleatórios fora do contexto do servidor.",
+          },
+          { role: "user", content: userText },
+        ],
+        max_tokens: 800,
+      }),
     });
 
-    const dataIA = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-      error?: { code?: number; message?: string; status?: string };
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+      error?: { message?: string };
     };
 
-    logger.info({ status: res.status, dataIA: JSON.stringify(dataIA).slice(0, 400) }, "Resposta Gemini");
-
-    if (dataIA.error) {
-      logger.error({ geminiError: dataIA.error }, "Erro retornado pela API do Gemini");
-      await message.reply(`🧊 Erro da IA: ${dataIA.error.message ?? "resposta inválida"}`);
+    if (data.error) {
+      logger.error({ groqError: data.error }, "Erro da API Groq");
+      await message.reply("🧊 Erro interno da IA. Tente novamente!");
       return;
     }
 
     const resposta =
-      dataIA?.candidates?.[0]?.content?.parts?.[0]?.text ??
+      data?.choices?.[0]?.message?.content ??
       "❄️ Não consegui processar sua pergunta. Tente novamente!";
 
     await message.reply(resposta);
   } catch (err) {
-    logger.error({ err }, "Erro ao chamar Gemini API");
-    await message.reply(
-      "🧊 Ocorreu um erro ao processar sua pergunta. Tente novamente mais tarde!"
-    );
+    logger.error({ err }, "Erro ao chamar Groq API");
+    await message.reply("🧊 Ocorreu um erro ao processar sua pergunta. Tente novamente mais tarde!");
   }
 });
 
