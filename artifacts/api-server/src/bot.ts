@@ -6,11 +6,13 @@ import {
   Routes,
   SlashCommandBuilder,
   EmbedBuilder,
+  AttachmentBuilder,
   Events,
   TextChannel,
   type Interaction,
   type Message,
 } from "discord.js";
+import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
 import { logger } from "./lib/logger";
 
 const BOT_TOKEN = process.env["BOT_TOKEN"];
@@ -33,7 +35,7 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-async function registerCommands(clientId: string) {
+async function registerCommands(clientId: string, guildId: string) {
   if (!BOT_TOKEN) return;
   const commands = [
     new SlashCommandBuilder()
@@ -54,8 +56,10 @@ async function registerCommands(clientId: string) {
 
   const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
   try {
-    await rest.put(Routes.applicationCommands(clientId), { body: commands });
-    logger.info("Slash commands /visu e /avatar registrados com sucesso.");
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
+      body: commands,
+    });
+    logger.info({ guildId }, "Slash commands /visu e /avatar registrados (guild) com sucesso.");
   } catch (err) {
     logger.error({ err }, "Erro ao registrar slash commands.");
   }
@@ -63,7 +67,9 @@ async function registerCommands(clientId: string) {
 
 client.once(Events.ClientReady, async (readyClient) => {
   logger.info({ tag: readyClient.user.tag }, "Bot do Discord conectado");
-  await registerCommands(readyClient.user.id);
+  for (const guild of readyClient.guilds.cache.values()) {
+    await registerCommands(readyClient.user.id, guild.id);
+  }
 });
 
 client.on(Events.MessageCreate, async (message: Message) => {
@@ -122,6 +128,105 @@ client.on(Events.MessageCreate, async (message: Message) => {
   }
 });
 
+async function buildProfileCard(
+  avatarUrl: string,
+  displayName: string,
+  messageCount: number,
+  roles: string
+): Promise<Buffer> {
+  const W = 600;
+  const H = 420;
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+
+  // Background gradient (dark blue)
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, "#0a0e2a");
+  bg.addColorStop(1, "#0d1f3c");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Glowing border
+  ctx.strokeStyle = "#00f0ff";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(6, 6, W - 12, H - 12);
+
+  // Header bar
+  const hdr = ctx.createLinearGradient(0, 0, W, 0);
+  hdr.addColorStop(0, "#00f0ff22");
+  hdr.addColorStop(1, "#0057ff22");
+  ctx.fillStyle = hdr;
+  ctx.fillRect(6, 6, W - 12, 60);
+
+  // Header label
+  ctx.fillStyle = "#00f0ff";
+  ctx.font = "bold 20px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("❄  PERFIL DO USUÁRIO  ❄", W / 2, 44);
+
+  // Avatar (circular)
+  const AX = W / 2;
+  const AY = 175;
+  const RADIUS = 80;
+
+  const avatar = await loadImage(avatarUrl);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(AX, AY, RADIUS, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(avatar, AX - RADIUS, AY - RADIUS, RADIUS * 2, RADIUS * 2);
+  ctx.restore();
+
+  // Avatar glow ring
+  ctx.beginPath();
+  ctx.arc(AX, AY, RADIUS + 4, 0, Math.PI * 2);
+  ctx.strokeStyle = "#00f0ff";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Display name
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 26px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(displayName, W / 2, 288);
+
+  // Divider
+  ctx.strokeStyle = "#00f0ff55";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(60, 305);
+  ctx.lineTo(W - 60, 305);
+  ctx.stroke();
+
+  // Messages
+  ctx.font = "bold 16px sans-serif";
+  ctx.fillStyle = "#00f0ff";
+  ctx.textAlign = "left";
+  ctx.fillText("💬  Mensagens Enviadas", 60, 335);
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "right";
+  ctx.fillText(messageCount.toLocaleString("pt-BR"), W - 60, 335);
+
+  // Roles
+  ctx.fillStyle = "#00f0ff";
+  ctx.textAlign = "left";
+  ctx.fillText("🎭  Cargos", 60, 368);
+  ctx.fillStyle = "#cccccc";
+  ctx.font = "15px sans-serif";
+  ctx.textAlign = "right";
+  const rolesText = roles.length > 40 ? roles.slice(0, 40) + "…" : roles;
+  ctx.fillText(rolesText, W - 60, 368);
+
+  // Footer
+  ctx.fillStyle = "#ffffff55";
+  ctx.font = "13px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Use /visu para ver seu perfil", W / 2, 406);
+
+  return canvas.toBuffer("image/png");
+}
+
 async function getRobloxAvatarUrl(username: string): Promise<string> {
   const usersRes = await fetch("https://users.roblox.com/v1/usernames/users", {
     method: "POST",
@@ -146,6 +251,7 @@ async function getRobloxAvatarUrl(username: string): Promise<string> {
 client.on(Events.InteractionCreate, async (interaction: Interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
+  // ─── /visu ───────────────────────────────────────────────
   if (interaction.commandName === "visu") {
     if (interaction.channelId !== VISU_CHANNEL_ID) {
       await interaction.reply({
@@ -158,9 +264,7 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     try {
       await interaction.deferReply({ ephemeral: true });
 
-      const member = await interaction.guild?.members.fetch(
-        interaction.user.id
-      );
+      const member = await interaction.guild?.members.fetch(interaction.user.id);
       const messageCount = messageCounts.get(interaction.user.id) ?? 0;
 
       const roles =
@@ -174,17 +278,13 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
         interaction.user.globalName ??
         interaction.user.username;
 
-      const embed = new EmbedBuilder()
-        .setColor(0x00f0ff)
-        .setTitle(`Perfil do Usuário - ${displayName}`)
-        .setDescription(
-          `**Mensagens Enviadas:** ${messageCount.toLocaleString("pt-BR")}\n\n**Cargos:** ${roles}`
-        )
-        .setImage(interaction.user.displayAvatarURL({ size: 1024 }))
-        .setFooter({ text: "Use /visu para ver seu perfil" });
+      const avatarUrl = interaction.user.displayAvatarURL({ size: 256, extension: "png" });
+
+      const cardBuffer = await buildProfileCard(avatarUrl, displayName, messageCount, roles);
+      const attachment = new AttachmentBuilder(cardBuffer, { name: "perfil.png" });
 
       const channel = interaction.channel as TextChannel;
-      await channel.send({ embeds: [embed] });
+      await channel.send({ files: [attachment] });
       await interaction.deleteReply();
     } catch (err) {
       logger.error({ err }, "Erro ao executar /visu");
@@ -199,6 +299,7 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
     return;
   }
 
+  // ─── /avatar ─────────────────────────────────────────────
   if (interaction.commandName === "avatar") {
     if (interaction.channelId !== AVATAR_CHANNEL_ID) {
       await interaction.reply({
@@ -216,7 +317,6 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
       const avatarUrl = await getRobloxAvatarUrl(username);
 
       const embed = new EmbedBuilder()
-        .setColor(0x00f0ff)
         .setImage(avatarUrl)
         .setFooter({ text: "Digite /avatar para mostrar o seu!" });
 
@@ -225,12 +325,9 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
       await interaction.deleteReply();
     } catch (err) {
       logger.error({ err }, "Erro ao executar /avatar");
-      const msg =
-        err instanceof Error ? err.message : "Erro desconhecido.";
+      const msg = err instanceof Error ? err.message : "Erro desconhecido.";
       try {
-        await interaction.editReply({
-          content: `❄️ ${msg}`,
-        });
+        await interaction.editReply({ content: `❄️ ${msg}` });
       } catch {
         /* already deleted */
       }

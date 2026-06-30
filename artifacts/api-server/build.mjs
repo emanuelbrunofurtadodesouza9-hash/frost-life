@@ -32,6 +32,7 @@ async function buildAll() {
       "discord.js",
       "@discordjs/*",
       "undici",
+      "@napi-rs/canvas",
       "sharp",
       "better-sqlite3",
       "sqlite3",
