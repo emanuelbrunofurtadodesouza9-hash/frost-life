@@ -35,8 +35,16 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-async function registerCommands(clientId: string, guildId: string) {
-  if (!BOT_TOKEN) return;
+async function clearGlobalCommands(clientId: string, rest: REST) {
+  try {
+    await rest.put(Routes.applicationCommands(clientId), { body: [] });
+    logger.info("Comandos globais removidos.");
+  } catch (err) {
+    logger.error({ err }, "Erro ao remover comandos globais.");
+  }
+}
+
+async function registerCommands(clientId: string, guildId: string, rest: REST) {
   const commands = [
     new SlashCommandBuilder()
       .setName("visu")
@@ -54,12 +62,11 @@ async function registerCommands(clientId: string, guildId: string) {
       .toJSON(),
   ];
 
-  const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
   try {
     await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
       body: commands,
     });
-    logger.info({ guildId }, "Slash commands /visu e /avatar registrados (guild) com sucesso.");
+    logger.info({ guildId }, "Slash commands /visu e /avatar registrados (guild).");
   } catch (err) {
     logger.error({ err }, "Erro ao registrar slash commands.");
   }
@@ -67,8 +74,11 @@ async function registerCommands(clientId: string, guildId: string) {
 
 client.once(Events.ClientReady, async (readyClient) => {
   logger.info({ tag: readyClient.user.tag }, "Bot do Discord conectado");
+  if (!BOT_TOKEN) return;
+  const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
+  await clearGlobalCommands(readyClient.user.id, rest);
   for (const guild of readyClient.guilds.cache.values()) {
-    await registerCommands(readyClient.user.id, guild.id);
+    await registerCommands(readyClient.user.id, guild.id, rest);
   }
 });
 
