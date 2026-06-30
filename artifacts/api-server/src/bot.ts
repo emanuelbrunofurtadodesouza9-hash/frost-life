@@ -123,7 +123,16 @@ client.on(Events.MessageCreate, async (message: Message) => {
 
     const dataIA = (await res.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
+      error?: { code?: number; message?: string; status?: string };
     };
+
+    logger.info({ status: res.status, dataIA: JSON.stringify(dataIA).slice(0, 400) }, "Resposta Gemini");
+
+    if (dataIA.error) {
+      logger.error({ geminiError: dataIA.error }, "Erro retornado pela API do Gemini");
+      await message.reply(`🧊 Erro da IA: ${dataIA.error.message ?? "resposta inválida"}`);
+      return;
+    }
 
     const resposta =
       dataIA?.candidates?.[0]?.content?.parts?.[0]?.text ??
