@@ -23,6 +23,38 @@ const FAQ_CHANNEL_ID = "1499875670128590969";
 const AVATAR_CHANNEL_ID = "1506813878976385094";
 
 const messageCounts = new Map<string, number>();
+let geminiModel = "gemini-2.0-flash"; // will be overridden at startup
+
+async function discoverGeminiModel(): Promise<string> {
+  const preferred = [
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash",
+  ];
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`
+    );
+    const data = (await res.json()) as {
+      models?: { name: string; supportedGenerationMethods?: string[] }[];
+    };
+    const available = (data.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => m.name.replace("models/", ""));
+
+    logger.info({ available }, "Modelos Gemini disponíveis");
+
+    for (const p of preferred) {
+      if (available.includes(p)) return p;
+    }
+    if (available.length > 0) return available[0]!;
+  } catch (err) {
+    logger.error({ err }, "Erro ao listar modelos Gemini");
+  }
+  return "gemini-2.0-flash"; // último recurso
+}
 
 const client = new Client({
   intents: [
@@ -74,6 +106,8 @@ async function registerCommands(clientId: string, guildId: string, rest: REST) {
 
 client.once(Events.ClientReady, async (readyClient) => {
   logger.info({ tag: readyClient.user.tag }, "Bot do Discord conectado");
+  geminiModel = await discoverGeminiModel();
+  logger.info({ geminiModel }, "Modelo Gemini selecionado");
   if (!BOT_TOKEN) return;
   const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
   await clearGlobalCommands(readyClient.user.id, rest);
@@ -101,7 +135,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
 
     const userText = message.content.replace(/<@!?\d+>/g, "").trim();
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GEMINI_KEY}`;
 
     const body = {
       contents: [
