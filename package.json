@@ -5,13 +5,21 @@
   "scripts": {
     "start": "tsx artifacts/api-server/bot.ts || tsx artifacts/api-server/index.ts || tsx bot.ts",
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "start": "tsx bot.ts",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "dependencies": {
+    "@napi-rs/canvas": "*",
+    "discord.js": "*",
+    "express": "*"
+  },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "prettier": "^3.8.4",
+    "tsx": "^4.19.2",
     "typescript": "~5.9.3"
   }
 }
